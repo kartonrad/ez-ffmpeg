@@ -21,8 +21,8 @@ repository = "https://github.com/YeautyYE/ez-ffmpeg"
 [dependencies]
 log = "0.4"
 thiserror = "1.0"
-ffmpeg-next = "7.1.0"
-ffmpeg-sys-next = "7.1.0"
+ffmpeg-next = { git = "ssh://git@github.com/kartonrad/rust-ffmpeg.git", branch = "master" }
+ffmpeg-sys-next = { git = "ssh://git@github.com/kartonrad/rust-ffmpeg-sys.git", branch = "master"}
 crossbeam = "0.8.4"
 crossbeam-channel = "0.5.13"
 libc = "0.2.159"
