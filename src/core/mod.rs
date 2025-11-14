@@ -228,7 +228,9 @@ pub mod stream_info;
 ///   results have a uniform format: a list of human-readable device names.
 /// - For more advanced device details (e.g., supported formats or resolutions), you may need
 ///   to perform additional FFmpeg queries or platform-specific calls.
+#[cfg(feature = "device")]
 pub mod device;
+
 /// The **hwaccel** module provides functionality for working with hardware-accelerated
 /// codecs in FFmpeg. It allows you to detect and configure various hardware devices
 /// (like NVENC, VAAPI, DXVA2, or VideoToolbox) so that FFmpeg can offload encoding or
@@ -506,6 +508,7 @@ fn initialize_ffmpeg() {
     INIT_FFMPEG.call_once(|| {
         unsafe {
             libc::atexit(cleanup as extern "C" fn());
+            #[cfg(feature = "device")]
             ffmpeg_sys_next::avdevice_register_all();
             ffmpeg_sys_next::avformat_network_init();
             ffmpeg_sys_next::av_log_set_callback(Some(ffmpeg_log_callback));
