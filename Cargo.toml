@@ -21,8 +21,8 @@ repository = "https://github.com/YeautyYE/ez-ffmpeg"
 [dependencies]
 log = "0.4"
 thiserror = "1.0"
-ffmpeg-next = { git = "ssh://git@github.com/kartonrad/rust-ffmpeg.git", branch = "master" }
-ffmpeg-sys-next = { git = "ssh://git@github.com/kartonrad/rust-ffmpeg-sys.git", branch = "master"}
+ffmpeg-next = { git = "ssh://git@github.com/kartonrad/rust-ffmpeg.git", branch = "master", default-features = false }
+ffmpeg-sys-next = { git = "ssh://git@github.com/kartonrad/rust-ffmpeg-sys.git", branch = "master", default-features = false }
 crossbeam = "0.8.4"
 crossbeam-channel = "0.5.13"
 libc = "0.2.159"
@@ -46,7 +46,18 @@ objc = "0.2"
 core-foundation = "0.10"
 
 [features]
-default = []
+default = ["codec", "device", "filter", "format", "software-resampling", "software-scaling"]
+
+# FFMPEG Features
+codec               = ["ffmpeg-sys-next/avcodec", "ffmpeg-next/codec"]
+device              = ["ffmpeg-sys-next/avdevice","ffmpeg-next/device", "format"]
+filter              = ["ffmpeg-sys-next/avfilter", "ffmpeg-next/filter"]
+format              = ["ffmpeg-sys-next/avformat", "ffmpeg-next/format", "codec"]
+resampling          = ["ffmpeg-sys-next/avresample", "ffmpeg-next/resampling"]
+postprocessing      = ["ffmpeg-sys-next/postproc", "ffmpeg-next/postprocessing"]
+software-resampling = ["ffmpeg-sys-next/swresample", "ffmpeg-next/software-resampling"]
+software-scaling    = ["ffmpeg-sys-next/swscale","ffmpeg-next/software-scaling", "codec"]
+
 async = []
 opengl = ["dep:surfman", "dep:glow", "dep:bytemuck"]
 rtmp = ["dep:rml_rtmp", "dep:slab", "dep:dashmap", "flv"]
