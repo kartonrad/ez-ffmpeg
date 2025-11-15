@@ -11,6 +11,7 @@ use crate::core::scheduler::ffmpeg_scheduler::{
 use crate::core::scheduler::input_controller::{InputController, SchNode};
 use crate::error::{Error, FilterGraphError, FilterGraphOperationError, FilterGraphParseError};
 use crate::hwaccel::{hw_device_for_filter, init_filter_hw_device, HWDevice};
+use crate::util::ffmpeg_utils::av_err2str;
 use crate::util::ffmpeg_utils::av_rescale_q_rnd;
 use crossbeam_channel::{RecvTimeoutError, Sender};
 use ffmpeg_next::Frame;
@@ -34,8 +35,8 @@ use ffmpeg_sys_next::{
     av_color_space_name, av_dict_free, av_frame_alloc, av_frame_free, av_frame_get_side_data,
     av_frame_ref, av_frame_remove_side_data, av_freep, av_get_pix_fmt_name, av_get_sample_fmt_name,
     av_inv_q, av_log2, av_malloc, av_opt_find, av_opt_set, av_opt_set_bin, av_opt_set_int,
-    av_pix_fmt_desc_get, av_q2d, av_rescale_q, avfilter_get_by_name,
-    avfilter_graph_alloc, avfilter_graph_config, avfilter_graph_create_filter, avfilter_graph_free,
+    av_pix_fmt_desc_get, av_q2d, av_rescale_q, avfilter_get_by_name, avfilter_graph_alloc,
+    avfilter_graph_config, avfilter_graph_create_filter, avfilter_graph_free,
     avfilter_graph_request_oldest, avfilter_inout_free, avfilter_link, avfilter_pad_get_type,
     avio_close, avio_closep, avio_open, avio_open2, avio_read, avio_read_to_bprint, avio_size,
     AVBPrint, AVBufferRef, AVColorRange, AVColorSpace, AVFilterContext, AVFilterGraph,
@@ -62,7 +63,6 @@ use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use crate::util::ffmpeg_utils::av_err2str;
 
 pub(crate) fn filter_graph_init(
     fg_index: usize,
@@ -160,7 +160,7 @@ pub(crate) fn filter_graph_init(
 
                 if input_index < finished_flag_list.len() {
                     if finished_flag_list[input_index].load(Ordering::Acquire) {
-                       continue;
+                        continue;
                     }
                 } else {
                     unreachable!()
@@ -185,7 +185,11 @@ pub(crate) fn filter_graph_init(
                             &frame_pool,
                         ) {
                             match e {
-                                Error::FilterGraph(FilterGraphOperationError::BufferSourceAddFrameError(FilterGraphError::EOF)) => {
+                                Error::FilterGraph(
+                                    FilterGraphOperationError::BufferSourceAddFrameError(
+                                        FilterGraphError::EOF,
+                                    ),
+                                ) => {
                                     debug!("Input {} no longer accepts new data", input_index);
                                     filter_receive_finish(&finished_flag_list, input_index);
                                 }
@@ -208,7 +212,11 @@ pub(crate) fn filter_graph_init(
                         &frame_pool,
                     ) {
                         match e {
-                            Error::FilterGraph(FilterGraphOperationError::BufferSourceAddFrameError(FilterGraphError::EOF)) => {
+                            Error::FilterGraph(
+                                FilterGraphOperationError::BufferSourceAddFrameError(
+                                    FilterGraphError::EOF,
+                                ),
+                            ) => {
                                 debug!("Input {} no longer accepts new data", input_index);
                                 filter_receive_finish(&finished_flag_list, input_index);
                             }
@@ -952,10 +960,8 @@ unsafe fn graph_is_meta(graph: *mut AVFilterGraph) -> bool {
 fn filter_is_buffersrc(f: *mut AVFilterContext) -> bool {
     unsafe {
         (*f).nb_inputs == 0
-            && (CStr::from_ptr((*(*f).filter).name)
-                == c"buffer"
-                || CStr::from_ptr((*(*f).filter).name)
-                    == c"abuffer")
+            && (CStr::from_ptr((*(*f).filter).name) == c"buffer"
+                || CStr::from_ptr((*(*f).filter).name) == c"abuffer")
     }
 }
 
@@ -1240,7 +1246,10 @@ unsafe fn fg_read_frames(
             if ret == AVERROR_EOF {
                 trace!("Filtergraph returned EOF, finishing");
             } else {
-                error!("Error requesting a frame from the filtergraph: {}", av_err2str(ret));
+                error!(
+                    "Error requesting a frame from the filtergraph: {}",
+                    av_err2str(ret)
+                );
             }
             return ret;
         }
@@ -1320,7 +1329,10 @@ unsafe fn fg_output_step(
         return 1;
     } else if ret < 0 {
         frame_pool.release(frame);
-        warn!("Error in retrieving a frame from the filtergraph: {}", av_err2str(ret));
+        warn!(
+            "Error in retrieving a frame from the filtergraph: {}",
+            av_err2str(ret)
+        );
         return ret;
     }
 
@@ -1337,14 +1349,13 @@ unsafe fn fg_output_step(
 
     }*/
 
-    if ofp.media_type == AVMEDIA_TYPE_VIDEO
-        && (*frame.as_ptr()).duration == 0 {
-            let fr = av_buffersink_get_frame_rate(ofp.filter);
-            if fr.num > 0 && fr.den > 0 {
-                (*frame.as_mut_ptr()).duration =
-                    av_rescale_q(1, av_inv_q(fr), (*frame.as_ptr()).time_base);
-            }
+    if ofp.media_type == AVMEDIA_TYPE_VIDEO && (*frame.as_ptr()).duration == 0 {
+        let fr = av_buffersink_get_frame_rate(ofp.filter);
+        if fr.num > 0 && fr.den > 0 {
+            (*frame.as_mut_ptr()).duration =
+                av_rescale_q(1, av_inv_q(fr), (*frame.as_ptr()).time_base);
         }
+    }
 
     ret = fg_output_frame(fgp, ofp, frame, frame_pool);
     if ret < 0 {
@@ -1422,12 +1433,14 @@ unsafe fn fg_output_frame(
     mut frame: Frame,
     frame_pool: &ObjPool<Frame>,
 ) -> i32 {
-    if !ofp.finished_flag_list.is_empty() && ofp.fg_input_index < ofp.finished_flag_list.len()
-        && ofp.finished_flag_list[ofp.fg_input_index].load(Ordering::Acquire) {
-            ofp.eof = true;
-            fgp.nb_outputs_done += 1;
-            return 0;
-        }
+    if !ofp.finished_flag_list.is_empty()
+        && ofp.fg_input_index < ofp.finished_flag_list.len()
+        && ofp.finished_flag_list[ofp.fg_input_index].load(Ordering::Acquire)
+    {
+        ofp.eof = true;
+        fgp.nb_outputs_done += 1;
+        return 0;
+    }
 
     let mut nb_frames = if !frame_is_null(&frame) { 1 } else { 0 };
     let mut nb_frames_prev = 0;
@@ -1532,10 +1545,9 @@ unsafe fn fg_output_frame(
             ofp.fpsconv_context.frame_number += 1;
             ofp.next_pts += 1;
 
-            if i == nb_frames_prev
-                && !frame_is_null(&frame) {
-                    (*frame.as_mut_ptr()).flags &= !AV_FRAME_FLAG_KEY;
-                }
+            if i == nb_frames_prev && !frame_is_null(&frame) {
+                (*frame.as_mut_ptr()).flags &= !AV_FRAME_FLAG_KEY;
+            }
         }
 
         fgp.got_frame = true;
@@ -1965,10 +1977,9 @@ fn choose_sample_fmts(
     format: AVSampleFormat,
     formats: Option<Vec<AVSampleFormat>>,
 ) {
-    if format == AV_SAMPLE_FMT_NONE
-        && (formats.is_none() || formats.as_ref().unwrap().is_empty()) {
-            return;
-        }
+    if format == AV_SAMPLE_FMT_NONE && (formats.is_none() || formats.as_ref().unwrap().is_empty()) {
+        return;
+    }
 
     unsafe {
         {
@@ -1997,7 +2008,7 @@ fn choose_sample_fmts(
             }
         }
 
-        av_bprint_chars(bprint, b":"[0] as i8, 1);
+        av_bprint_chars(bprint, b":"[0] as c_char, 1);
     }
 }
 
@@ -2006,10 +2017,9 @@ fn choose_sample_rates(bprint: &mut AVBPrint, rate: i32, rates: Option<Vec<i32>>
 
 #[cfg(not(feature = "docs-rs"))]
 fn choose_sample_rates(bprint: &mut AVBPrint, rate: i32, rates: Option<Vec<i32>>) {
-    if rate == 0
-        && (rates.is_none() || rates.as_ref().unwrap().is_empty()) {
-            return;
-        }
+    if rate == 0 && (rates.is_none() || rates.as_ref().unwrap().is_empty()) {
+        return;
+    }
 
     unsafe {
         {
@@ -2032,7 +2042,7 @@ fn choose_sample_rates(bprint: &mut AVBPrint, rate: i32, rates: Option<Vec<i32>>
             }
         }
 
-        av_bprint_chars(bprint, b":"[0] as i8, 1);
+        av_bprint_chars(bprint, b":"[0] as c_char, 1);
     }
 }
 
@@ -2076,7 +2086,7 @@ fn choose_channel_layouts(
             return;
         }
 
-        av_bprint_chars(bprint, b":"[0] as i8, 1);
+        av_bprint_chars(bprint, b":"[0] as c_char, 1);
     }
 }
 
@@ -2223,7 +2233,7 @@ fn choose_pix_fmts(
             }
         }
 
-        av_bprint_chars(bprint, b":"[0] as i8, 1);
+        av_bprint_chars(bprint, b":"[0] as c_char, 1);
     }
 }
 
@@ -2263,7 +2273,7 @@ fn choose_color_spaces(
             }
         }
 
-        av_bprint_chars(bprint, b":"[0] as i8, 1);
+        av_bprint_chars(bprint, b":"[0] as c_char, 1);
     }
 }
 
@@ -2303,7 +2313,7 @@ fn choose_color_ranges(
             }
         }
 
-        av_bprint_chars(bprint, b":"[0] as i8, 1);
+        av_bprint_chars(bprint, b":"[0] as c_char, 1);
     }
 }
 
@@ -2376,11 +2386,7 @@ unsafe fn configure_input_audio_filter(
         av_channel_layout_describe_bprint(&ifp.ch_layout, &mut args);
     } else {
         let channels_fmt = CString::new(":channels=%d").unwrap();
-        av_bprintf(
-            &mut args,
-            channels_fmt.as_ptr(),
-            ifp.ch_layout.nb_channels,
-        );
+        av_bprintf(&mut args, channels_fmt.as_ptr(), ifp.ch_layout.nb_channels);
     }
 
     let name = format!("graph_{fg_index}_in_{}", ifp.opts.name);
@@ -2543,10 +2549,9 @@ unsafe fn configure_input_video_filter(
         } else if theta.abs() > 1.0 {
             let rotate_buf = format!("{:.6}*PI/180", theta);
             ret = insert_filter(&mut last_filter, &mut pad_idx, "rotate", Some(&rotate_buf));
-        } else if theta.abs() < 1.0
-            && displaymatrix[4] < 0 {
-                ret = insert_filter(&mut last_filter, &mut pad_idx, "vflip", None);
-            }
+        } else if theta.abs() < 1.0 && displaymatrix[4] < 0 {
+            ret = insert_filter(&mut last_filter, &mut pad_idx, "vflip", None);
+        }
 
         if ret < 0 {
             return ret;
