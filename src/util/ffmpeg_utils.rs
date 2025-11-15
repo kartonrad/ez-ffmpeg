@@ -1,8 +1,13 @@
+use ffmpeg_sys_next::{
+    av_dict_set, av_strerror, AVDictionary, AVRational, AV_ERROR_MAX_STRING_SIZE,
+};
+use libc::c_char;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
-use ffmpeg_sys_next::{av_dict_set, av_strerror, AVDictionary, AVRational, AV_ERROR_MAX_STRING_SIZE};
 
-pub(crate) fn hashmap_to_avdictionary(opts: &Option<HashMap<CString, CString>>) -> *mut AVDictionary {
+pub(crate) fn hashmap_to_avdictionary(
+    opts: &Option<HashMap<CString, CString>>,
+) -> *mut AVDictionary {
     let mut av_dict: *mut AVDictionary = std::ptr::null_mut();
 
     if let Some(map) = opts {
@@ -18,7 +23,7 @@ pub(crate) fn hashmap_to_avdictionary(opts: &Option<HashMap<CString, CString>>) 
 
 pub fn av_err2str(err: i32) -> String {
     unsafe {
-        let mut buffer = [0i8; AV_ERROR_MAX_STRING_SIZE];
+        let mut buffer: [c_char; AV_ERROR_MAX_STRING_SIZE] = [0; AV_ERROR_MAX_STRING_SIZE];
         av_strerror(err, buffer.as_mut_ptr(), AV_ERROR_MAX_STRING_SIZE);
         let c_str = CStr::from_ptr(buffer.as_ptr());
         match c_str.to_str() {
@@ -87,7 +92,10 @@ fn av_rescale_rnd(a: i64, b: i64, c: i64, mut rnd: u32) -> i64 {
     // av_assert2(c > 0);
     // av_assert2(b >= 0);
     // av_assert2((unsigned)(rnd&~AV_ROUND_PASS_MINMAX)<=5 && (rnd&~AV_ROUND_PASS_MINMAX)!=4);
-    if c <= 0 || b < 0 || !((rnd & !AV_ROUND_PASS_MINMAX) <= 5 && (rnd & !AV_ROUND_PASS_MINMAX) != 4) {
+    if c <= 0
+        || b < 0
+        || !((rnd & !AV_ROUND_PASS_MINMAX) <= 5 && (rnd & !AV_ROUND_PASS_MINMAX) != 4)
+    {
         return i64::MIN;
     }
 
@@ -263,3 +271,4 @@ mod tests {
         assert_eq!(av_rescale_rnd(100, 100, 100, 4), i64::MIN);
     }
 }
+

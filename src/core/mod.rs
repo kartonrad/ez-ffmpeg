@@ -456,9 +456,13 @@ type VaListType = *mut ffmpeg_sys_next::__va_list_tag;
     target_arch = "aarch64",
     not(target_vendor = "apple"),
     not(target_os = "uefi"),
+    not(target_os = "android"),
     not(windows),
 ))]
 type VaListType = *mut libc::c_void;
+
+#[cfg(all(target_arch = "aarch64", target_os = "android"))]
+type VaListType = ffmpeg_sys_next::__va_list;
 
 #[cfg(all(target_arch = "powerpc", not(target_os = "uefi"), not(windows)))]
 type VaListType = *mut ffmpeg_sys_next::__va_list_tag_powerpc;
