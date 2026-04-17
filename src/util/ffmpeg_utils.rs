@@ -5,17 +5,6 @@
 use ffmpeg_sys_next::{
     av_dict_set, av_strerror, AVDictionary, AVRational, AV_ERROR_MAX_STRING_SIZE,
 };
-use std::collections::HashMap;
-use std::ffi::{CStr, CString};
-
-/// Convert an optional `HashMap<CString, CString>` into an `AVDictionary` by invoking
-/// `av_dict_set()` for each entry.
-///
-/// FFmpeg reference: `av_dict_set()` in `libavutil/dict.c` uses the same ownership rules; the
-/// caller is still responsible for freeing the resulting dictionary via `av_dict_free()`.
-use ffmpeg_sys_next::{
-    av_dict_set, av_strerror, AVDictionary, AVRational, AV_ERROR_MAX_STRING_SIZE,
-};
 use libc::c_char;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
